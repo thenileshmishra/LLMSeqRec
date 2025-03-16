@@ -1,0 +1,41 @@
+# Ignore Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore data files (if they are large or sensitive)
+data/raw/
+data/processed/
+data/external/
+
+# Ignore notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore logs and experiment outputs
+experiments/logs/
+experiments/results/
+
+# Ignore environment files (except environment.yml)
+*.env
+.env/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore package and dependency directories
+*.egg-info/
+dist/
+build/
