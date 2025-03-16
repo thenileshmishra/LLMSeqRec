@@ -1,4 +1,3 @@
-Below is the updated README.md file in a copy-paste ready format:
 
 ```markdown
 # LLMSeqRec: LLM-Enhanced Contextual Sequential Recommender
@@ -118,5 +117,3 @@ This project is licensed under the [MIT License](https://opensource.org/licenses
 1. Kang, W. C., & McAuley, J. (2018). [Self-Attentive Sequential Recommendation](https://arxiv.org/abs/1808.09781).
 2. Relevant documentation and research on integrating LLMs into recommendation systems.
 ```
-
-You can now copy and paste the above content directly into your `README.md` file.
