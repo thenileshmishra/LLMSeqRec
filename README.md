@@ -1,5 +1,4 @@
 
-```markdown
 # LLMSeqRec: LLM-Enhanced Contextual Sequential Recommender
 
 ## Overview
@@ -116,4 +115,3 @@ This project is licensed under the [MIT License](https://opensource.org/licenses
 ## References
 1. Kang, W. C., & McAuley, J. (2018). [Self-Attentive Sequential Recommendation](https://arxiv.org/abs/1808.09781).
 2. Relevant documentation and research on integrating LLMs into recommendation systems.
-```
