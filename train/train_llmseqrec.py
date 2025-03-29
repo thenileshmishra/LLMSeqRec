@@ -2,8 +2,6 @@ import os
 import numpy as np
 import tensorflow as tf
 import pandas as pd
-import sys
-print("Nilesh Misrha", sys.path)
 
 # Use absolute import for the model.
 from LLMSeqRec.models.llmseqrec import LLMSeqRecModel
