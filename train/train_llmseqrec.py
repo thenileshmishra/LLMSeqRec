@@ -3,9 +3,13 @@ import numpy as np
 import tensorflow as tf
 import pandas as pd
 
-# Use absolute import for the model.
+print("Using GPU:", tf.config.list_physical_devices('GPU'))
+
 from LLMSeqRec.models.llmseqrec import LLMSeqRecModel
 
+##########################################################################
+# python -m LLMSeqRec.train.train_llmseqrec           <- use this commoan to run you must be in GSOC Paper directory
+############################################################################
 
 ########################################################################
 # 1. Load and Parse Preprocessed Training Data
@@ -67,7 +71,7 @@ class SASRecDataset(tf.data.Dataset):
             neg_candidates = tf.map_fn(
                 lambda x: filter_negatives(x[0], x[1]),
                 (neg_candidates, lbl),
-                dtype=tf.int32
+                fn_output_signature=tf.TensorSpec(shape=(k_neg,), dtype=tf.int32)
             )
             
             return (seq, lbl, neg_candidates)
