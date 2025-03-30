@@ -33,54 +33,97 @@ def load_train_sequences(csv_path):
 # 2. Build a TF Dataset with Negative Sampling
 ########################################################################
 
+# class SASRecDataset(tf.data.Dataset):
+#     """
+#     A custom Dataset to yield (input_seq, label, negative_samples).
+#     Implements negative sampling of size k for each example.
+#     """
+    # def __new__(cls, item_seqs, labels, num_items, k_neg=200, batch_size=32, shuffle=True):
+    #     ds = tf.data.Dataset.from_tensor_slices((item_seqs, labels))
+        
+    #     if shuffle:
+    #         ds = ds.shuffle(buffer_size=len(item_seqs), reshuffle_each_iteration=True)
+        
+    #     ds = ds.batch(batch_size, drop_remainder=False)
+        
+    #     def add_negatives(seq, lbl):
+    #         # seq: shape (batch_size, seq_len)
+    #         # lbl: shape (batch_size,)
+    #         batch_size_ = tf.shape(seq)[0]
+    #         neg_candidates = tf.random.uniform(
+    #             shape=[batch_size_, k_neg],
+    #             minval=0,
+    #             maxval=num_items,
+    #             dtype=tf.int32
+    #         )
+            
+    #         def filter_negatives(neg_row, label_item):
+    #             mask = tf.equal(neg_row, tf.cast(label_item, tf.int32))
+    #             re_draw = tf.random.uniform(
+    #                 shape=[k_neg],
+    #                 minval=0,
+    #                 maxval=num_items,
+    #                 dtype=tf.int32
+    #             )
+    #             return tf.where(mask, re_draw, neg_row)
+            
+    #         # Apply filtering row-wise.
+    #         neg_candidates = tf.map_fn(
+    #             lambda x: filter_negatives(x[0], x[1]),
+    #             (neg_candidates, lbl),
+    #             fn_output_signature=tf.TensorSpec(shape=(k_neg,), dtype=tf.int32)
+    #         )
+            
+    #         return (seq, lbl, neg_candidates)
+        
+    #     ds = ds.map(add_negatives, num_parallel_calls=tf.data.AUTOTUNE)
+    #     ds = ds.prefetch(tf.data.AUTOTUNE)
+    #     return ds
+
 class SASRecDataset(tf.data.Dataset):
     """
-    A custom Dataset to yield (input_seq, label, negative_samples).
+    A vectorized custom Dataset to yield (input_seq, label, negative_samples).
     Implements negative sampling of size k for each example.
     """
-    def __new__(cls, item_seqs, labels, num_items, k_neg=200, batch_size=32, shuffle=True):
+    def __new__(cls, item_seqs, labels, num_items, k_neg=50, batch_size=32, shuffle=True):
         ds = tf.data.Dataset.from_tensor_slices((item_seqs, labels))
-        
+
         if shuffle:
             ds = ds.shuffle(buffer_size=len(item_seqs), reshuffle_each_iteration=True)
-        
+
         ds = ds.batch(batch_size, drop_remainder=False)
-        
-        def add_negatives(seq, lbl):
-            # seq: shape (batch_size, seq_len)
-            # lbl: shape (batch_size,)
-            batch_size_ = tf.shape(seq)[0]
-            neg_candidates = tf.random.uniform(
-                shape=[batch_size_, k_neg],
+
+        def add_negatives(seq_batch, label_batch):
+            # Ensure labels are int32
+            label_batch = tf.cast(label_batch, tf.int32)
+
+            # Randomly sample negatives
+            neg_samples = tf.random.uniform(
+                shape=(tf.shape(label_batch)[0], k_neg),
                 minval=0,
                 maxval=num_items,
                 dtype=tf.int32
             )
-            
-            def filter_negatives(neg_row, label_item):
-                mask = tf.equal(neg_row, tf.cast(label_item, tf.int32))
-                re_draw = tf.random.uniform(
-                    shape=[k_neg],
-                    minval=0,
-                    maxval=num_items,
-                    dtype=tf.int32
-                )
-                return tf.where(mask, re_draw, neg_row)
-            
-            # Apply filtering row-wise.
-            neg_candidates = tf.map_fn(
-                lambda x: filter_negatives(x[0], x[1]),
-                (neg_candidates, lbl),
-                fn_output_signature=tf.TensorSpec(shape=(k_neg,), dtype=tf.int32)
+
+            # Expand labels for comparison
+            label_exp = tf.expand_dims(label_batch, axis=1)
+            label_exp = tf.tile(label_exp, [1, k_neg])  # shape: (batch_size, k_neg)
+
+            # Filter out any accidental positives from negatives
+            mask = tf.equal(neg_samples, label_exp)
+            resampled = tf.random.uniform(
+                shape=(tf.shape(label_batch)[0], k_neg),
+                minval=0,
+                maxval=num_items,
+                dtype=tf.int32
             )
-            
-            return (seq, lbl, neg_candidates)
-        
+            neg_samples = tf.where(mask, resampled, neg_samples)
+
+            return seq_batch, label_batch, neg_samples
+
         ds = ds.map(add_negatives, num_parallel_calls=tf.data.AUTOTUNE)
         ds = ds.prefetch(tf.data.AUTOTUNE)
         return ds
-
-
 ########################################################################
 # 3. Define the Training Loop with Sampled Softmax
 ########################################################################
@@ -131,27 +174,111 @@ def training_step(model, optimizer, item_seq, pos_label, neg_samples):
 # 4. Main Training Function
 ########################################################################
 
+# def main():
+#     # File paths
+#     train_csv = "LLMSeqRec/data/processed/train_sequences.csv"
+#     llm_emb_path = "LLMSeqRec/data/processed/llm_embeddings.npy"
+    
+#     # Hyperparameters
+#     BATCH_SIZE = 32
+#     K_NEG = 50
+#     EPOCHS = 3
+    
+#     # A) Load training data.
+#     user_ids, item_seqs, labels = load_train_sequences(train_csv)
+#     num_samples, seq_len = item_seqs.shape
+#     print(f"Loaded training data: {num_samples} sequences, each length {seq_len}.")
+    
+#     # Infer num_items and embedding dimension from the pretrained embeddings.
+#     llm_embeddings = np.load(llm_emb_path)
+#     num_items, embed_dim = llm_embeddings.shape
+#     print(f"Loaded LLM embeddings: num_items={num_items}, embed_dim={embed_dim}")
+    
+#     # B) Build Model & Load LLM Embeddings.
+#     model = LLMSeqRecModel(
+#         num_items=num_items,
+#         max_seq_len=seq_len,
+#         embed_dim=embed_dim,
+#         num_blocks=2,
+#         num_heads=2,
+#         ffw_dim=1024,
+#         dropout_rate=0.1
+#     )
+#     model.load_llm_embeddings(llm_embeddings)
+#     _ = model(item_seqs[:1], training=False)
+#     print("[INFO] Model built successfully.")
+    
+#     # C) Prepare TensorFlow Dataset.
+#     train_ds = SASRecDataset(item_seqs, labels, num_items, k_neg=K_NEG,
+#                              batch_size=BATCH_SIZE, shuffle=True)
+    
+#     # D) Training Loop.
+#     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+#     for epoch in range(1, EPOCHS + 1):
+#         print(f"\n=== Epoch {epoch}/{EPOCHS} ===")
+#         epoch_loss = 0.0
+#         steps = 0
+        
+#         for (seq_batch, pos_batch, neg_batch) in train_ds:
+#             loss_val = training_step(model, optimizer, seq_batch, pos_batch, neg_batch)
+#             epoch_loss += loss_val.numpy()
+#             steps += 1
+#             if steps % 100 == 0:
+#                 print(f" Step {steps}, avg_loss={epoch_loss / steps:.4f}")
+        
+#         epoch_loss /= max(steps, 1)
+#         print(f"[Epoch {epoch}]  Average Loss: {epoch_loss:.4f}")
+    
+#     print("Training complete!")
+
+def load_validation_data(csv_path):
+    data = pd.read_csv(csv_path, header=None)
+    sequences = data.iloc[:, 1:-1].values
+    labels = data.iloc[:, -1].values
+    return sequences, labels
+
+def evaluate(model, sequences, labels, top_k=10):
+    hit_count, ndcg_sum, total = 0, 0, len(sequences)
+    batch_size = 32
+    for i in range(0, total, batch_size):
+        batch_seq = sequences[i:i+batch_size]
+        batch_labels = labels[i:i+batch_size]
+
+        logits = model(batch_seq, training=False)
+        topk_preds = tf.math.top_k(logits, k=top_k).indices.numpy()
+
+        for pred, true_item in zip(topk_preds, batch_labels):
+            if true_item in pred:
+                hit_count += 1
+                rank = np.where(pred == true_item)[0][0] + 1
+                ndcg_sum += 1 / np.log2(rank + 1)
+
+    hit = hit_count / total
+    ndcg = ndcg_sum / total
+    return hit, ndcg
+
+
 def main():
     # File paths
     train_csv = "LLMSeqRec/data/processed/train_sequences.csv"
+    val_csv = "LLMSeqRec/data/processed/val_sequences.csv"
     llm_emb_path = "LLMSeqRec/data/processed/llm_embeddings.npy"
     
     # Hyperparameters
-    BATCH_SIZE = 64
-    K_NEG = 200
-    EPOCHS = 3
+    BATCH_SIZE = 32
+    K_NEG = 100
+    EPOCHS = 5
     
     # A) Load training data.
     user_ids, item_seqs, labels = load_train_sequences(train_csv)
+    val_seqs, val_labels = load_validation_data(val_csv)
     num_samples, seq_len = item_seqs.shape
-    print(f"Loaded training data: {num_samples} sequences, each length {seq_len}.")
     
-    # Infer num_items and embedding dimension from the pretrained embeddings.
+    # B) Load LLM embeddings
     llm_embeddings = np.load(llm_emb_path)
     num_items, embed_dim = llm_embeddings.shape
-    print(f"Loaded LLM embeddings: num_items={num_items}, embed_dim={embed_dim}")
     
-    # B) Build Model & Load LLM Embeddings.
+    # C) Build model
     model = LLMSeqRecModel(
         num_items=num_items,
         max_seq_len=seq_len,
@@ -163,31 +290,29 @@ def main():
     )
     model.load_llm_embeddings(llm_embeddings)
     _ = model(item_seqs[:1], training=False)
-    print("[INFO] Model built successfully.")
     
-    # C) Prepare TensorFlow Dataset.
+    # D) Build dataset
     train_ds = SASRecDataset(item_seqs, labels, num_items, k_neg=K_NEG,
                              batch_size=BATCH_SIZE, shuffle=True)
-    
-    # D) Training Loop.
+
+    # E) Training loop
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
     for epoch in range(1, EPOCHS + 1):
         print(f"\n=== Epoch {epoch}/{EPOCHS} ===")
-        epoch_loss = 0.0
-        steps = 0
-        
-        for (seq_batch, pos_batch, neg_batch) in train_ds:
+        epoch_loss, steps = 0.0, 0
+        for seq_batch, pos_batch, neg_batch in train_ds:
             loss_val = training_step(model, optimizer, seq_batch, pos_batch, neg_batch)
             epoch_loss += loss_val.numpy()
             steps += 1
             if steps % 100 == 0:
                 print(f" Step {steps}, avg_loss={epoch_loss / steps:.4f}")
+        avg_loss = epoch_loss / max(steps, 1)
         
-        epoch_loss /= max(steps, 1)
-        print(f"[Epoch {epoch}]  Average Loss: {epoch_loss:.4f}")
-    
-    print("Training complete!")
+        # Validation
+        hit, ndcg = evaluate(model, val_seqs, val_labels, top_k=10)
+        print(f"[Epoch {epoch}] Loss: {avg_loss:.4f} | Hit@10: {hit:.4f} | NDCG@10: {ndcg:.4f}")
 
+    print("Training complete!")
 
 if __name__ == "__main__":
     main()
