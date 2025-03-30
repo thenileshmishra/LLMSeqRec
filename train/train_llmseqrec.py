@@ -295,6 +295,22 @@ def main():
     train_ds = SASRecDataset(item_seqs, labels, num_items, k_neg=K_NEG,
                              batch_size=BATCH_SIZE, shuffle=True)
 
+
+    # Create a logs folder if it doesn't exist
+    os.makedirs("LLMSeqRec/logs", exist_ok=True)
+
+    # Define log file paths for LLMSeqRec
+    train_log_file = "LLMSeqRec/logs/llmseqrec_train_log.csv"
+    metrics_log_file = "LLMSeqRec/logs/llmseqrec_metrics.csv"
+
+    # Write headers if the files do not exist
+    if not os.path.exists(train_log_file):
+        with open(train_log_file, "w") as f:
+            f.write("epoch,loss\n")
+    if not os.path.exists(metrics_log_file):
+        with open(metrics_log_file, "w") as f:
+            f.write("epoch,hit_at_10,ndcg_at_10\n")
+
     # E) Training loop
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
     for epoch in range(1, EPOCHS + 1):
@@ -308,11 +324,18 @@ def main():
                 print(f" Step {steps}, avg_loss={epoch_loss / steps:.4f}")
         avg_loss = epoch_loss / max(steps, 1)
         
-        # Validation
+        # Validation: Compute metrics
         hit, ndcg = evaluate(model, val_seqs, val_labels, top_k=10)
         print(f"[Epoch {epoch}] Loss: {avg_loss:.4f} | Hit@10: {hit:.4f} | NDCG@10: {ndcg:.4f}")
+        
+        # Log the results to CSV files
+        with open(train_log_file, "a") as f:
+            f.write(f"{epoch},{avg_loss:.4f}\n")
+        with open(metrics_log_file, "a") as f:
+            f.write(f"{epoch},{hit:.4f},{ndcg:.4f}\n")
 
-    print("Training complete!")
+        print("Training complete!")
+
 
 if __name__ == "__main__":
     main()
