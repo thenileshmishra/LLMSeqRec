@@ -116,8 +116,19 @@ def main():
     
     # Hyperparameters
     BATCH_SIZE = 32
-    K_NEG = 100
-    EPOCHS = 1
+    K_NEG = 200  # Increased negative sampling
+    EPOCHS = 20  # Increased epochs
+    max_seq_len = 200  # Increased sequence length
+    embed_dim = 256  # Increased embedding dimension
+    
+    # Learning rate scheduler
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=1e-4,
+        decay_steps=10000,
+        decay_rate=0.96,
+        staircase=True
+    )
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
     # Load training and validation data
     user_ids, item_seqs, labels = load_train_sequences(train_csv)
@@ -125,14 +136,12 @@ def main():
     num_samples, seq_len = item_seqs.shape
     
     # Determine number of items (from dataset or a separate file)
-    # Here, we assume the maximum ID + 1.
     num_items = int(max(np.max(item_seqs), np.max(labels))) + 1
     
     # Build the SASRec baseline model.
-    embed_dim = 128  # or any desired dimension for baseline
     model = SASRecModel(
         num_items=num_items,
-        max_seq_len=seq_len,
+        max_seq_len=max_seq_len,
         embed_dim=embed_dim,
         num_blocks=2,
         num_heads=2,
@@ -145,10 +154,7 @@ def main():
     train_ds = SASRecDataset(item_seqs, labels, num_items, k_neg=K_NEG,
                              batch_size=BATCH_SIZE, shuffle=True)
     
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
-    
-
-# Create logs folder if not exists
+    # Create logs folder if not exists
     os.makedirs("LLMSeqRec/logs", exist_ok=True)
 
     # Define log file paths for SASRec
@@ -163,8 +169,11 @@ def main():
         with open(metrics_log_file, "w") as f:
             f.write("epoch,hit_at_10,ndcg_at_10\n")
 
-    # Training loop (example, same as above)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    # Training loop with early stopping
+    best_ndcg = 0
+    patience = 3
+    patience_counter = 0
+
     for epoch in range(1, EPOCHS + 1):
         print(f"\n=== Epoch {epoch}/{EPOCHS} ===")
         epoch_loss, steps = 0.0, 0
@@ -185,6 +194,16 @@ def main():
             f.write(f"{epoch},{avg_loss:.4f}\n")
         with open(metrics_log_file, "a") as f:
             f.write(f"{epoch},{hit:.4f},{ndcg:.4f}\n")
+        
+        # Early stopping
+        if ndcg > best_ndcg:
+            best_ndcg = ndcg
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print("Early stopping triggered.")
+                break
 
     print("Training complete!")
 
